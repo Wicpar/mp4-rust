@@ -1,8 +1,11 @@
 use serde::Serialize;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 use crate::mp4box::*;
 use crate::mp4box::{mfhd::MfhdBox, traf::TrafBox};
+use crate::tfdt::TfdtBox;
+use crate::tfhd::TfhdBox;
+use crate::trun::TrunBox;
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct MoofBox {
@@ -97,6 +100,54 @@ impl<W: Write> WriteBox<&mut W> for MoofBox {
         for traf in self.trafs.iter() {
             traf.write_box(writer)?;
         }
-        Ok(0)
+        Ok(size)
     }
+}
+
+
+
+#[test]
+fn test_moof_same_size() {
+    let src_box = MoofBox {
+        mfhd: MfhdBox {
+            version: 0,
+            flags: 0,
+            sequence_number: 1
+        },
+        trafs: vec![TrafBox {
+            tfhd: TfhdBox {
+                version: 0,
+                flags: 0x020000, // offset relative to moof flag
+                track_id: 1,
+                base_data_offset: 0 // offset addition
+            },
+            tfdt: Some(TfdtBox {
+                version: 0,
+                flags: 0,
+                base_media_decode_time: 1
+            }),
+            trun: Some(TrunBox {
+                version: 0,
+                flags: TrunBox::FLAG_SAMPLE_DURATION | TrunBox::FLAG_SAMPLE_SIZE,
+                sample_count: 1,
+                data_offset: None,
+                first_sample_flags: None,
+                sample_durations: vec![1],
+                sample_sizes: vec![1],
+                sample_flags: vec![],
+                sample_cts: vec![]
+            })
+        }]
+    };
+    let mut buf = Vec::new();
+    src_box.write_box(&mut buf).unwrap();
+    assert_eq!(buf.len(), src_box.box_size() as usize);
+
+    let mut reader = Cursor::new(&buf);
+    let header = BoxHeader::read(&mut reader).unwrap();
+    assert_eq!(header.name, BoxType::MoofBox);
+    assert_eq!(src_box.box_size(), header.size);
+
+    let dst_box = MoofBox::read_box(&mut reader, header.size).unwrap();
+    assert_eq!(src_box, dst_box);
 }

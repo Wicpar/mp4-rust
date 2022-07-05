@@ -22,6 +22,9 @@ impl MoovBox {
 
     pub fn get_size(&self) -> u64 {
         let mut size = HEADER_SIZE + self.mvhd.box_size();
+        if let Some(mvex) = &self.mvex {
+            size += mvex.box_size();
+        }
         for trak in self.traks.iter() {
             size += trak.box_size();
         }
@@ -107,6 +110,9 @@ impl<W: Write> WriteBox<&mut W> for MoovBox {
         BoxHeader::new(self.box_type(), size).write(writer)?;
 
         self.mvhd.write_box(writer)?;
+        if let Some(mvex) = &self.mvex {
+            mvex.write_box(writer)?;
+        }
         for trak in self.traks.iter() {
             trak.write_box(writer)?;
         }
